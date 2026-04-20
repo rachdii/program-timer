@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<title>Program Timer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,sans-serif;background:#0A0A0A;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:48px 20px 40px;overflow-x:hidden}
+h1{font-size:10px;letter-spacing:.25em;text-transform:uppercase;color:#555;margin-bottom:40px}
+.ring-wrap{position:relative;width:220px;height:220px;margin-bottom:28px}
+.ring-wrap svg{position:absolute;top:0;left:0;transform:rotate(-90deg)}
+#ring-prog{transition:stroke-dashoffset .8s linear;stroke-dasharray:628;stroke-dashoffset:628}
+.ring-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.time-big{font-size:48px;font-weight:800;letter-spacing:-2px;line-height:1}
+.time-sub{font-size:10px;color:#555;letter-spacing:.15em;margin-top:4px}
+.time-total{font-size:11px;color:#444;margin-top:3px}
+.bar-track{width:100%;max-width:320px;height:2px;background:#222;border-radius:2px;margin-bottom:28px;overflow:hidden}
+.bar-fill{height:2px;width:0%;background:#fff;border-radius:2px;transition:width .8s linear}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:28px}
+.chip{padding:7px 16px;border-radius:20px;border:1px solid #333;background:transparent;color:#888;font-size:12px;cursor:pointer;transition:all .2s}
+.chip.active{background:#fff;border-color:#fff;color:#000;font-weight:700}
+.btns{display:flex;gap:10px;width:100%;max-width:320px;margin-bottom:40px}
+.btn{flex:1;padding:15px;border-radius:12px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.btn-start{background:#fff;color:#000}
+.btn-stop{background:#1A1A1A;color:#fff;border:1px solid #333}
+.btn:active{opacity:.7}
+.btn:disabled{opacity:.3}
+.api-wrap{width:100%;max-width:320px;margin-bottom:32px}
+.api-wrap label{font-size:10px;color:#555;letter-spacing:.15em;text-transform:uppercase;display:block;margin-bottom:8px}
+.api-input{width:100%;background:#111;border:1px solid #2A2A2A;border-radius:10px;padding:12px 14px;color:#fff;font-size:13px;font-family:monospace;outline:none}
+.api-input:focus{border-color:#444}
+.songs-title{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#444;width:100%;max-width:320px;margin-bottom:12px}
+.songs{width:100%;max-width:320px;display:flex;flex-direction:column;gap:10px}
+.song-card{background:#111;border:1px solid #1E1E1E;border-radius:12px;padding:14px}
+.song-card.loading{border-color:#1a3a5c}
+.song-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.song-ts{font-size:10px;color:#444}
+.badge{font-size:9px;padding:3px 9px;border-radius:20px;background:#1a3a2a;color:#4a9a6a;letter-spacing:.05em}
+.badge.loading{background:#1a2a3a;color:#4a7aaa}
+.song-text{font-size:13px;color:#ccc;line-height:1.6;white-space:pre-wrap}
+.empty{text-align:center;color:#333;font-size:12px;padding:24px 0}
+.pulse{animation:pulse .4s ease-out}
+@keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.06)}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<h1>Program Timer</h1>
+
+<div class="ring-wrap" id="ring-wrap">
+  <svg width="220" height="220" viewBox="0 0 220 220">
+    <circle cx="110" cy="110" r="100" fill="none" stroke="#1A1A1A" stroke-width="4"/>
+    <circle id="ring-prog" cx="110" cy="110" r="100" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  </svg>
+  <div class="ring-center">
+    <div class="time-big" id="t-remain">05:00</div>
+    <div class="time-sub">per interval</div>
+    <div class="time-total" id="t-total">00:00 total</div>
+  </div>
+</div>
+
+<div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+
+<div class="chips" id="chips">
+  <div class="chip" data-m="1">1m</div>
+  <div class="chip active" data-m="5">5m</div>
+  <div class="chip" data-m="10">10m</div>
+  <div class="chip" data-m="15">15m</div>
+  <div class="chip" data-m="20">20m</div>
+  <div class="chip" data-m="30">30m</div>
+</div>
+
+<div class="btns">
+  <button class="btn btn-start" id="btn-start">Start</button>
+  <button class="btn btn-stop" id="btn-reset">Reset</button>
+</div>
+
+<div class="api-wrap">
+  <label>Clé API Anthropic</label>
+  <input class="api-input" id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off"/>
+</div>
+
+<div class="songs-title" id="songs-label">Songs · 0</div>
+<div class="songs" id="songs"><div class="empty">Les chansons apparaîtront ici</div></div>
+
+<script>
+const CIRC = 2 * Math.PI * 100;
+let mins = 5, elapsed = 0, total = 0, running = false, timer = null, songCount = 0;
+const fmt = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+
+document.getElementById('chips').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if(!chip || running) return;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  mins = parseInt(chip.dataset.m);
+  elapsed = 0;
+  updateUI();
+});
+
+function updateUI() {
+  const iSecs = mins * 60;
+  const rem = iSecs - (elapsed % iSecs);
+  const pct = (elapsed % iSecs) / iSecs;
+  document.getElementById('t-remain').textContent = fmt(rem);
+  document.getElementById('t-total').textContent = fmt(total) + ' total';
+  document.getElementById('ring-prog').style.strokeDashoffset = CIRC * (1 - pct);
+  document.getElementById('bar').style.width = (pct * 100) + '%';
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.15, 0.3].forEach(t => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.4, ctx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+      o.start(ctx.currentTime + t);
+      o.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch(e){}
+}
+
+function vibrate() {
+  if(navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+}
+
+async function genSong() {
+  const key = document.getElementById('api-key').value.trim();
+  if(!key) return;
+  const genres = ['lo-fi hip hop','synthwave','indie folk','jazz fusion','post-punk','bossa nova','bedroom pop'];
+  const moods = ['upbeat','melancholic','funky','mysterious','dreamy','rebellious','playful'];
+  const genre = genres[Math.floor(Math.random()*genres.length)];
+  const mood = moods[Math.floor(Math.random()*moods.length)];
+  songCount++;
+  document.getElementById('songs-label').textContent = `Songs · ${songCount}`;
+  document.querySelector('.empty')?.remove();
+  const card = document.createElement('div');
+  card.className = 'song-card loading';
+  card.innerHTML = `<div class="song-meta"><span class="song-ts">at ${fmt(total)}</span><span class="badge loading">composing...</span></div><div class="song-text">...</div>`;
+  document.getElementById('songs').prepend(card);
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},
+      body: JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,messages:[{role:'user',content:`Write a short song (title + 2 verses + chorus, max 12 lines) in ${genre} genre, ${mood} mood. Vivid imagery. First line = title only, then lyrics. No commentary.`}]})
+    });
+    const d = await r.json();
+    const text = d.content?.find(b=>b.type==='text')?.text || 'Erreur.';
+    card.querySelector('.song-text').textContent = text;
+    card.querySelector('.badge').textContent = genre;
+    card.querySelector('.badge').className = 'badge';
+    card.className = 'song-card';
+  } catch(e) {
+    card.querySelector('.song-text').textContent = 'Erreur réseau.';
+    card.className = 'song-card';
+  }
+}
+
+const btnStart = document.getElementById('btn-start');
+btnStart.addEventListener('click', () => {
+  if(running) { running=false; clearInterval(timer); btnStart.textContent='Resume'; return; }
+  running = true;
+  btnStart.textContent = 'Pause';
+  timer = setInterval(() => {
+    elapsed++; total++;
+    updateUI();
+    if(elapsed % (mins*60) === 0) {
+      beep(); vibrate();
+      document.getElementById('ring-wrap').classList.add('pulse');
+      setTimeout(() => document.getElementById('ring-wrap').classList.remove('pulse'), 400);
+      genSong();
+    }
+  }, 1000);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  running=false; clearInterval(timer);
+  elapsed=0; total=0;
+  btnStart.textContent='Start';
+  updateUI();
+});
+
+updateUI();
+</script>
+</body>
+</html>
